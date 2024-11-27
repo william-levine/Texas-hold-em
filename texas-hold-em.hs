@@ -3,7 +3,7 @@ import Data.List
 
 
 
--- Playing card related data types
+-- Playing cards and chips related data types
 
 data Suit = Clubs | Hearts | Spades | Diamonds deriving Show
 data Rank = Ace | Two | Three | Four | Five | Six | Seven | Eight | Nine | Ten | Jack | Queen | King deriving Show
@@ -14,8 +14,12 @@ instance Show Card where
     show :: Card -> String
     show (Card suit value) = show value ++ " of " ++ show suit
 
-type Deck = [Card]  -- a deck is nothing more than a collection of cards
 
+newtype Deck = Deck [Card] deriving Show
+newtype Hand = Hand [Card] deriving Show
+newtype CommunityCards = CommunityCards [Card] deriving Show
+
+type Chips = Int
 
 
 
@@ -25,8 +29,8 @@ data PlayerBehaviour = RandomPlayer | PassivePlayer | AggressivePlayer | SmartPl
 
 data Player = Player {
     name :: String,
-    hand :: [Card],
-    chips :: Int,
+    hand :: Hand,
+    chips :: Chips,
     isDealer :: Bool,
     behaviour :: PlayerBehaviour
 } deriving Show
@@ -39,8 +43,8 @@ data Player = Player {
 data GameState = GameState {
     activePlayers :: [Player],
     deck :: Deck,
-    communityCards :: [Card],
-    pot :: Int,
+    communityCards :: CommunityCards,
+    pot :: Chips,
     bets :: [Int],
     dealerPosition :: Int,
     smallBlindPosition :: Int,
@@ -51,43 +55,44 @@ data GameState = GameState {
 
 
 createDeck :: Deck
-createDeck = [Card suit rank |
+createDeck = Deck [Card suit rank |
     suit <- [Clubs,Hearts,Spades,Diamonds],
     rank <- [Ace,Two,Three,Four,Five,Six,Seven,Eight,Nine,Ten,Jack,Queen,King]]
 
 
 shuffleDeck :: Int -> Deck -> Deck
-shuffleDeck n deck = [ x | (x, a) <- sortBy cmp (zip deck (randoms (mkStdGen n) :: [Int]))]
+shuffleDeck n (Deck cards) = Deck [ x | (x, a) <- sortBy cmp (zip cards (randoms (mkStdGen n) :: [Int]))]
     where
         cmp :: (a, Int) -> (a, Int) -> Ordering
         cmp (_, x) (_, y) = compare x y
 
 
 dealCards :: Int -> Deck -> (Deck, [Card]) -- Tuples the remaining deck and the cards that were dealt out
-dealCards 0 cards = (cards, [])
-dealCards n [] = ([], [])
-dealCards n (first:rest) =
-    let (remainingDeck, dealtCards) = dealCards (n-1) rest
-    in (remainingDeck, first:dealtCards)
+dealCards 0 (Deck cards) = (Deck cards, [])
+dealCards n (Deck []) = (Deck [], [])
+dealCards n (Deck (first:rest)) =
+    let (Deck remainingCards, dealtCards) = dealCards (n-1) (Deck rest)
+    in (Deck remainingCards, first:dealtCards)
+
 
 
 
 main :: IO ()
 main = do
-    let deck = createDeck
-    putStrLn ("\nDeck:\n")
-    putStrLn (show deck ++ "\n")
+    let (Deck cards) = createDeck
+    putStrLn "\nDeck:\n"
+    putStrLn (show cards ++ "\n")
 
-    let shuffledDeck = shuffleDeck 27 deck
-    let deck = shuffledDeck
-    putStrLn ("\nShuffled Deck:\n")
-    putStrLn (show deck ++ "\n")
+    let (Deck shuffledCards) = shuffleDeck 27 (Deck cards)
+    let cards = shuffledCards
+    putStrLn "\nShuffled Deck:\n"
+    putStrLn (show cards ++ "\n")
 
 
     let gameState = GameState {
-        activePlayers = [], 
-        deck = deck,
-        communityCards = [],
+        activePlayers = [],
+        deck = Deck cards,
+        communityCards = CommunityCards [],
         pot = 0,
         bets = [],
         dealerPosition = 0,
@@ -95,13 +100,13 @@ main = do
         bigBlindPosition = 2
     }
 
-    putStrLn ("\nGame State:\n")
+    putStrLn "\nGame State:\n"
     putStrLn (show gameState ++ "\n")
 
 
-    let (remainingDeck, dealtCards) = dealCards 4 deck
-    let deck = remainingDeck
+    let (Deck remainingCards, dealtCards) = dealCards 4 (Deck cards)
+    let cards = remainingCards
 
-    putStrLn ("\nDeal 4 cards:\n")
+    putStrLn "\nDeal 4 cards:\n"
     putStrLn (show dealtCards ++ "\n")
-    putStrLn (show deck ++ "\n")
+    putStrLn (show cards ++ "\n")
