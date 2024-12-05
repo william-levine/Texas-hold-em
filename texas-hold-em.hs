@@ -25,8 +25,6 @@ instance Ord Card where
 
 newtype Deck = Deck [Card] deriving Show
 
-newtype Hand = Hand [Card] deriving Show
-
 data HandRank
     = HighCard
     | OnePair
@@ -54,7 +52,7 @@ data PlayerBehaviour = RandomPlayer | PassivePlayer | AggressivePlayer | SmartPl
 
 data Player = Player {
     name :: String,
-    hand :: Hand,
+    hand :: [Card],
     chips :: Chips,
     isDealer :: Bool,
     behaviour :: PlayerBehaviour
@@ -95,40 +93,18 @@ dealCards n (Deck (first:rest)) =
     in (Deck remainingCards, first:dealtCards)
 
 
-runInitialisation :: GameState
-runInitialisation = execState initialiseGame (GameState [] (Deck []) PreFlop 0 [] 0 0 0)
-
-initialiseGame :: State GameState ()
-initialiseGame = do
-    -- Generate the deck and shuffle it
-    let deck = createDeck
-    let shuffledDeck = shuffleDeck 15 deck
-
-    -- Generate 5 random players
-    let player1 = Player { name = "Player 1", hand = Hand [], chips = 0, isDealer = True,  behaviour = RandomPlayer }
-    let player2 = Player { name = "Player 2", hand = Hand [], chips = 0, isDealer = False, behaviour = RandomPlayer }
-    let player3 = Player { name = "Player 3", hand = Hand [], chips = 0, isDealer = False, behaviour = RandomPlayer }
-    let player4 = Player { name = "Player 4", hand = Hand [], chips = 0, isDealer = False, behaviour = RandomPlayer }
-    let player5 = Player { name = "Player 5", hand = Hand [], chips = 0, isDealer = False, behaviour = RandomPlayer }
-
-    -- Update the Game State
-    put GameState {
-        activePlayers = [player1, player2, player3, player4, player5],
-        deck = shuffledDeck,
-        communityCards = PreFlop,
-        pot = 0,
-        bets = [],
-        dealerPosition = 0,
-        smallBlindPosition = 1,
-        bigBlindPosition = 2
-    }
-
+getCardRank :: Card -> CardRank
+getCardRank (Card _ rank) = rank
 
 getCardRanks :: [Card] -> [CardRank]
-getCardRanks = map (\(Card _ rank) -> rank)
+getCardRanks = map getCardRank
+
+
+getCardSuit :: Card -> CardSuit
+getCardSuit (Card suit _) = suit
 
 getCardSuits :: [Card] -> [CardSuit]
-getCardSuits = map (\(Card suit _) -> suit)
+getCardSuits = map getCardSuit
 
 
 isAcePresent :: [Card] -> Bool
@@ -272,16 +248,23 @@ determineBestHand (h:hx) = foldl compareHands h hx
             | otherwise                                     = (cards1, handRank2)
 
 
+-- Adds the highest of the remaining cards to complete the 5-card hand 
+completeFiveCardHand :: [Card] -> [Card] -> [Card]
+completeFiveCardHand primaryHand allCards =
+    let remaining = filter (`notElem` primaryHand) allCards
+        sortedRemaining = reverse (sortByRanksAceHigh remaining)
+    in primaryHand ++ take (5 - length primaryHand) sortedRemaining
+
+
 -- Returns the best possible hand formed from a list of cards. i.e. the hand formed using a players hole cards and the community cards
 evaluateHand :: [Card] -> ([Card], HandRank)
-evaluateHand [] = error "Invalid"
-evaluateHand cards = do
+evaluateHand [] = error "No cards to evaluate"
+evaluateHand cards =
     let combinations = cardCombinations 5 cards
-    let handRankings = map evaluateHandRanking combinations
-    let bestHand = determineBestHand handRankings
-    bestHand
-
-
+        handRankings = map evaluateHandRanking combinations
+        bestPrimaryHand = determineBestHand handRankings
+        completeHand = completeFiveCardHand (fst bestPrimaryHand) cards
+    in (completeHand, snd bestPrimaryHand)
 
 
 
@@ -313,6 +296,33 @@ updateBigBlindPosition :: Int -> State GameState ()
 updateBigBlindPosition newBigBlindPosition = modify (\gs -> gs { bigBlindPosition = newBigBlindPosition })
 
 
+runInitialisation :: GameState
+runInitialisation = execState initialiseGame (GameState [] (Deck []) PreFlop 0 [] 0 0 0)
+
+initialiseGame :: State GameState ()
+initialiseGame = do
+    -- Generate the deck and shuffle it
+    let deck = createDeck
+    let shuffledDeck = shuffleDeck 15 deck
+
+    -- Generate 5 random players
+    let player1 = Player { name = "Player 1", hand = [], chips = 0, isDealer = True,  behaviour = RandomPlayer }
+    let player2 = Player { name = "Player 2", hand = [], chips = 0, isDealer = False, behaviour = RandomPlayer }
+    let player3 = Player { name = "Player 3", hand = [], chips = 0, isDealer = False, behaviour = RandomPlayer }
+    let player4 = Player { name = "Player 4", hand = [], chips = 0, isDealer = False, behaviour = RandomPlayer }
+    let player5 = Player { name = "Player 5", hand = [], chips = 0, isDealer = False, behaviour = RandomPlayer }
+
+    -- Update the Game State
+    put GameState {
+        activePlayers = [player1, player2, player3, player4, player5],
+        deck = shuffledDeck,
+        communityCards = PreFlop,
+        pot = 0,
+        bets = [],
+        dealerPosition = 0,
+        smallBlindPosition = 1,
+        bigBlindPosition = 2
+    }
 
 
 main :: IO ()
