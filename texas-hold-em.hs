@@ -233,6 +233,59 @@ getRoyalFlush cards =
         Nothing
 
 
+-- Returns the best hand ranking from a given list of cards, along with the cards that form that hand
+evaluateHandRanking :: [Card] -> ([Card], HandRank)
+evaluateHandRanking [] = error "No cards to evaluate"
+evaluateHandRanking cards =
+    case getRoyalFlush cards of
+    Just hand -> (hand, RoyalFlush)
+    Nothing -> case getStraightFlush cards of
+        Just hand -> (hand, StraightFlush)
+        Nothing -> case getFourOfAKind cards of
+            Just hand -> (hand, FourOfAKind)
+            Nothing -> case getFullHouse cards of
+                Just hand -> (hand, FullHouse)
+                Nothing -> case getFlush cards of
+                    Just hand -> (hand, Flush)
+                    Nothing -> case getStraight cards of
+                        Just hand -> (hand, Straight)
+                        Nothing -> case getThreeOfAKind cards of
+                            Just hand -> (hand, ThreeOfAKind)
+                            Nothing -> case getTwoPair cards of
+                                Just hand -> (hand, TwoPair)
+                                Nothing -> case getOnePair cards of
+                                    Just hand -> (hand, OnePair)
+                                    Nothing -> (cards, HighCard)
+
+
+-- Given all combinations of cards, returns the list of cards with the highest hand rank
+-- If multiple combinations have the same hand rank, the one with the higher ranked cards will win
+determineBestHand :: [([Card], HandRank)] -> ([Card], HandRank)
+determineBestHand [] = error "No hands to evaluate"
+determineBestHand (h:hx) = foldl compareHands h hx
+    where
+        compareHands (cards1, handRank1) (cards2, handRank2)
+            | handRank1 > handRank2                         = (cards1, handRank1)
+            | handRank1 < handRank2                         = (cards2, handRank2)
+            | getHighestCard cards1 > getHighestCard cards2 = (cards1, handRank1)
+            | getHighestCard cards1 < getHighestCard cards2 = (cards2, handRank2)
+            | otherwise                                     = (cards1, handRank2)
+
+
+-- Returns the best possible hand formed from a list of cards. i.e. the hand formed using a players hole cards and the community cards
+evaluateHand :: [Card] -> ([Card], HandRank)
+evaluateHand [] = error "Invalid"
+evaluateHand cards = do
+    let combinations = cardCombinations 5 cards
+    let handRankings = map evaluateHandRanking combinations
+    let bestHand = determineBestHand handRankings
+    bestHand
+
+
+
+
+
+
 -- Functions to update attributes of a game state
 
 updateActivePlayers :: [Player] -> State GameState ()
