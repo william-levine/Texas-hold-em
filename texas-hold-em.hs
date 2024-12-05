@@ -3,11 +3,11 @@ import Control.Monad.State
 import Data.List
 
 
-data Suit = Clubs | Hearts | Spades | Diamonds deriving (Show, Eq)
+data CardSuit = Clubs | Hearts | Spades | Diamonds deriving (Show, Eq)
 
-data Rank = Ace | Two | Three | Four | Five | Six | Seven | Eight | Nine | Ten | Jack | Queen | King deriving (Show, Eq, Enum, Ord)
+data CardRank = Ace | Two | Three | Four | Five | Six | Seven | Eight | Nine | Ten | Jack | Queen | King deriving (Show, Eq, Enum, Ord)
 
-data Card = Card Suit Rank
+data Card = Card CardSuit CardRank
 
 instance Show Card where
     show :: Card -> String
@@ -120,10 +120,10 @@ initialiseGame = do
     }
 
 
-getCardRanks :: [Card] -> [Rank]
+getCardRanks :: [Card] -> [CardRank]
 getCardRanks = map (\(Card _ rank) -> rank)
 
-getCardSuits :: [Card] -> [Suit]
+getCardSuits :: [Card] -> [CardSuit]
 getCardSuits = map (\(Card suit _) -> suit)
 
 
@@ -141,7 +141,7 @@ cardCombinations n (x:xs)
 
 
 -- Ace can be low or high, so the successor of King is Ace
-rankSuccessor :: Rank -> Rank
+rankSuccessor :: CardRank -> CardRank
 rankSuccessor rank
     | rank == King = Ace
     | otherwise = succ rank -- Rank is treated as an enum
@@ -149,12 +149,12 @@ rankSuccessor rank
 
 -- Returns a list of the ranks of cards
 -- Assumes Ace is LOW
-sortRanksAceLow :: [Card] -> [Rank]
+sortRanksAceLow :: [Card] -> [CardRank]
 sortRanksAceLow cards = sort (getCardRanks cards)
 
 -- Returns a list of the ranks of cards
 -- Assumes Ace is HIGH
-sortRanksAceHigh :: [Card] -> [Rank]
+sortRanksAceHigh :: [Card] -> [CardRank]
 sortRanksAceHigh cards = do 
     let (x:xs) = sort (getCardRanks cards)
     xs ++ [x]
