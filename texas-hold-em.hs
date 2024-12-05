@@ -1,6 +1,7 @@
 import System.Random
 import Control.Monad.State
 import Data.List
+import Data.Maybe
 
 
 data CardSuit = Clubs | Hearts | Spades | Diamonds deriving (Show, Eq)
@@ -162,7 +163,7 @@ sortByRanksAceLow = sort
 -- Returns a list of the ranks of cards
 -- Assumes Ace is HIGH
 sortByRanksAceHigh :: [Card] -> [Card]
-sortByRanksAceHigh cards = do 
+sortByRanksAceHigh cards = do
     let (x:xs) = sort cards
     xs ++ [x]
 
@@ -172,51 +173,64 @@ groupByRanksAceLow cards = group (sortByRanksAceLow cards)
 
 
 -- If there is one group with a length of 2 (2 of the cards have the same rank) then it is a Pair
-isOnePair :: [Card] -> Bool
-isOnePair cards = length (filter (\x -> length x == 2) (groupByRanksAceLow cards)) == 1
+getOnePair :: [Card] -> Maybe [Card]
+getOnePair cards = case filter (\x -> length x == 2) (groupByRanksAceLow cards) of
+    [pair] -> Just pair    -- one pair
+    _      -> Nothing
 
 -- If there are 2 groups with a length of 2 then there are 2 Pairs - a Two Pair
-isTwoPair :: [Card] -> Bool
-isTwoPair cards = length (filter (\x -> length x == 2) (groupByRanksAceLow cards)) == 2
+getTwoPair :: [Card] -> Maybe [Card]
+getTwoPair cards = case filter (\x -> length x == 2) (groupByRanksAceLow cards) of
+    [pair1, pair2] -> Just (pair1 ++ pair2)
+    _              -> Nothing
 
 -- If there is a group of length 3 then it is a Three of a Kind
-isThreeOfAKind :: [Card] -> Bool
-isThreeOfAKind cards = length (filter (\x -> length x == 3) (groupByRanksAceLow cards)) == 1
+getThreeOfAKind :: [Card] -> Maybe [Card]
+getThreeOfAKind cards = case filter (\x -> length x == 3) (groupByRanksAceLow cards) of
+    [threeOfAKind] -> Just threeOfAKind
+    _        -> Nothing
 
 -- If the cards are consecutive then it is a Straight. However, Ace can be low or high, so both instances must be checked
-isStraight :: [Card] -> Bool
-isStraight cards =
-    correctSuccessor (zip sortedRanks (tail sortedRanks)) ||
-    isAcePresent cards && correctSuccessor (zip sortedRanksAceHigh (tail sortedRanksAceHigh))
+getStraight :: [Card] -> Maybe [Card]
+getStraight cards =
+    if correctSuccessors (zip sortedRanks (tail sortedRanks)) || isAcePresent cards && correctSuccessors (zip sortedRanksAceHigh (tail sortedRanksAceHigh)) then
+        Just cards
+    else
+        Nothing
+
     where
-        correctSuccessor = all (\(Card _ r1, Card _ r2) -> rankSuccessor r1 == r2)
+        correctSuccessors = all (\(Card _ r1, Card _ r2) -> rankSuccessor r1 == r2)
         sortedRanks = sortByRanksAceLow cards
         sortedRanksAceHigh = sortByRanksAceHigh cards
 
 -- If there is 1 group then all the cards have the same suit. This is a Flush
-isFlush :: [Card] -> Bool
-isFlush cards = length (group (getCardSuits cards)) == 1
+getFlush :: [Card] -> Maybe [Card]
+getFlush cards = if length (group (getCardSuits cards)) == 1 then Just cards else Nothing
 
 -- If there are 2 groups, one of length 2 and one of length 3, then there is a Pair and a Three of a Kind, known as a Full House
-isFullHouse :: [Card] -> Bool
-isFullHouse cards = 
+getFullHouse :: [Card] -> Maybe [Card]
+getFullHouse cards =
     case sort (map length (groupByRanksAceLow cards)) of
-        [2, 3] -> True
-        _      -> False
+        [2, 3] -> Just cards
+        _      -> Nothing
 
 -- If there is a group of length 4 (4 of the same rank) then it is a Four of a Kind
-isFourOfAKind :: [Card] -> Bool
-isFourOfAKind cards = length (filter (\x -> length x == 4) (groupByRanksAceLow cards)) == 1
+getFourOfAKind :: [Card] -> Maybe [Card]
+getFourOfAKind cards = case filter (\x -> length x == 4) (groupByRanksAceLow cards) of
+    [fourOfAKind] -> Just fourOfAKind
+    _             -> Nothing
 
 -- If a hand is a Straight and a Flush then it is a Straight Flush
-isStraightFlush :: [Card] -> Bool
-isStraightFlush cards = isStraight cards && isFlush cards
+getStraightFlush :: [Card] -> Maybe [Card]
+getStraightFlush cards = if isJust (getStraight cards) && isJust (getFlush cards) then Just cards else Nothing
 
 -- If a hand is a Flush and the ranks of the cards are Ten through Ace (high) then it's a Royal Flush
-isRoyalFlush :: [Card] -> Bool
-isRoyalFlush cards = isFlush cards && getCardRanks (sortByRanksAceHigh cards) == [Ten, Jack, Queen, King, Ace]
-
-
+getRoyalFlush :: [Card] -> Maybe [Card]
+getRoyalFlush cards =
+    if isJust (getFlush cards) && getCardRanks (sortByRanksAceHigh cards) == [Ten, Jack, Queen, King, Ace] then
+        Just cards
+    else
+        Nothing
 
 
 -- Functions to update attributes of a game state
