@@ -19,6 +19,9 @@ instance Eq Card where
     (/=) :: Card -> Card -> Bool
     (Card _ r1) /= (Card _ r2) = r1 /= r2
 
+instance Ord Card where
+    compare (Card _ cr1) (Card _ cr2) = compare cr1 cr2
+
 newtype Deck = Deck [Card] deriving Show
 
 newtype Hand = Hand [Card] deriving Show
@@ -147,30 +150,38 @@ rankSuccessor rank
     | otherwise = succ rank -- Rank is treated as an enum
 
 
+getHighestCard :: [Card] -> Card
+getHighestCard = maximum
+
+
 -- Returns a list of the ranks of cards
 -- Assumes Ace is LOW
-sortRanksAceLow :: [Card] -> [CardRank]
-sortRanksAceLow cards = sort (getCardRanks cards)
+sortByRanksAceLow :: [Card] -> [Card]
+sortByRanksAceLow = sort
 
 -- Returns a list of the ranks of cards
 -- Assumes Ace is HIGH
-sortRanksAceHigh :: [Card] -> [CardRank]
-sortRanksAceHigh cards = do 
-    let (x:xs) = sort (getCardRanks cards)
+sortByRanksAceHigh :: [Card] -> [Card]
+sortByRanksAceHigh cards = do 
+    let (x:xs) = sort cards
     xs ++ [x]
+
+groupByRanksAceLow :: [Card] -> [[Card]]
+groupByRanksAceLow cards = group (sortByRanksAceLow cards)
+
 
 
 -- If there is one group with a length of 2 (2 of the cards have the same rank) then it is a Pair
 isOnePair :: [Card] -> Bool
-isOnePair cards = length (filter (\x -> length x == 2) (group (sortRanksAceLow cards))) == 1
+isOnePair cards = length (filter (\x -> length x == 2) (groupByRanksAceLow cards)) == 1
 
 -- If there are 2 groups with a length of 2 then there are 2 Pairs - a Two Pair
 isTwoPair :: [Card] -> Bool
-isTwoPair cards = length (filter (\x -> length x == 2) (group (sortRanksAceLow cards))) == 2
+isTwoPair cards = length (filter (\x -> length x == 2) (groupByRanksAceLow cards)) == 2
 
 -- If there is a group of length 3 then it is a Three of a Kind
 isThreeOfAKind :: [Card] -> Bool
-isThreeOfAKind cards = length (filter (\x -> length x == 3) (group (sortRanksAceLow cards))) == 1
+isThreeOfAKind cards = length (filter (\x -> length x == 3) (groupByRanksAceLow cards)) == 1
 
 -- If the cards are consecutive then it is a Straight. However, Ace can be low or high, so both instances must be checked
 isStraight :: [Card] -> Bool
@@ -178,9 +189,9 @@ isStraight cards =
     correctSuccessor (zip sortedRanks (tail sortedRanks)) ||
     isAcePresent cards && correctSuccessor (zip sortedRanksAceHigh (tail sortedRanksAceHigh))
     where
-        correctSuccessor = all (\(x, y) -> rankSuccessor x == y)
-        sortedRanks = sortRanksAceLow cards
-        sortedRanksAceHigh = sortRanksAceHigh cards
+        correctSuccessor = all (\(Card _ r1, Card _ r2) -> rankSuccessor r1 == r2)
+        sortedRanks = sortByRanksAceLow cards
+        sortedRanksAceHigh = sortByRanksAceHigh cards
 
 -- If there is 1 group then all the cards have the same suit. This is a Flush
 isFlush :: [Card] -> Bool
@@ -189,13 +200,13 @@ isFlush cards = length (group (getCardSuits cards)) == 1
 -- If there are 2 groups, one of length 2 and one of length 3, then there is a Pair and a Three of a Kind, known as a Full House
 isFullHouse :: [Card] -> Bool
 isFullHouse cards = 
-    case sort (map length (group (sortRanksAceLow cards))) of
+    case sort (map length (groupByRanksAceLow cards)) of
         [2, 3] -> True
         _      -> False
 
 -- If there is a group of length 4 (4 of the same rank) then it is a Four of a Kind
 isFourOfAKind :: [Card] -> Bool
-isFourOfAKind cards = length (filter (\x -> length x == 4) (group (sortRanksAceLow cards))) == 1
+isFourOfAKind cards = length (filter (\x -> length x == 4) (groupByRanksAceLow cards)) == 1
 
 -- If a hand is a Straight and a Flush then it is a Straight Flush
 isStraightFlush :: [Card] -> Bool
@@ -203,7 +214,8 @@ isStraightFlush cards = isStraight cards && isFlush cards
 
 -- If a hand is a Flush and the ranks of the cards are Ten through Ace (high) then it's a Royal Flush
 isRoyalFlush :: [Card] -> Bool
-isRoyalFlush cards = isFlush cards && sortRanksAceHigh cards == [Ten, Jack, Queen, King, Ace]
+isRoyalFlush cards = isFlush cards && getCardRanks (sortByRanksAceHigh cards) == [Ten, Jack, Queen, King, Ace]
+
 
 
 
