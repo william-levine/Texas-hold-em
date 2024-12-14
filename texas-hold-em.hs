@@ -52,7 +52,8 @@ data PlayerBehaviour = RandomPlayer | PassivePlayer | AggressivePlayer | SmartPl
 
 data Player = Player {
     name :: String,
-    hand :: [Card],
+    holeCards :: [Card],
+    hand :: Maybe ([Card], [Card], HandRank), -- (primary hand, kickers, hand rank)
     chips :: Chips,
     isDealer :: Bool,
     behaviour :: PlayerBehaviour
@@ -306,11 +307,11 @@ initialiseGame = do
     let shuffledDeck = shuffleDeck 15 deck
 
     -- Generate 5 random players
-    let player1 = Player { name = "Player 1", hand = [], chips = 0, isDealer = True,  behaviour = RandomPlayer }
-    let player2 = Player { name = "Player 2", hand = [], chips = 0, isDealer = False, behaviour = RandomPlayer }
-    let player3 = Player { name = "Player 3", hand = [], chips = 0, isDealer = False, behaviour = RandomPlayer }
-    let player4 = Player { name = "Player 4", hand = [], chips = 0, isDealer = False, behaviour = RandomPlayer }
-    let player5 = Player { name = "Player 5", hand = [], chips = 0, isDealer = False, behaviour = RandomPlayer }
+    let player1 = Player { name = "Player 1", holeCards = [], hand = Nothing, chips = 0, isDealer = True,  behaviour = RandomPlayer }
+    let player2 = Player { name = "Player 2", holeCards = [], hand = Nothing, chips = 0, isDealer = False, behaviour = RandomPlayer }
+    let player3 = Player { name = "Player 3", holeCards = [], hand = Nothing, chips = 0, isDealer = False, behaviour = RandomPlayer }
+    let player4 = Player { name = "Player 4", holeCards = [], hand = Nothing, chips = 0, isDealer = False, behaviour = RandomPlayer }
+    let player5 = Player { name = "Player 5", holeCards = [], hand = Nothing, chips = 0, isDealer = False, behaviour = RandomPlayer }
 
     -- Update the Game State
     put GameState {
