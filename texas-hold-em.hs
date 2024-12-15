@@ -7,7 +7,7 @@ import Data.Ord
 
 data CardSuit = Clubs | Hearts | Spades | Diamonds deriving (Show, Eq)
 
-data CardRank = Ace | Two | Three | Four | Five | Six | Seven | Eight | Nine | Ten | Jack | Queen | King deriving (Show, Eq, Enum, Ord)
+data CardRank = Two | Three | Four | Five | Six | Seven | Eight | Nine | Ten | Jack | Queen | King | Ace deriving (Show, Eq, Enum, Ord, Bounded)
 
 data Card = Card CardSuit CardRank
 
@@ -110,10 +110,6 @@ getCardSuits :: [Card] -> [CardSuit]
 getCardSuits = map getCardSuit
 
 
-isAcePresent :: [Card] -> Bool
-isAcePresent = any (\(Card _ rank) -> rank == Ace)
-
-
 -- Returns all combinations of n cards
 cardCombinations :: Int -> [Card] -> [[Card]]
 cardCombinations 0 _  = [[]]
@@ -123,10 +119,13 @@ cardCombinations n (x:xs)
     | otherwise = map (x:) (cardCombinations (n-1) xs) ++ cardCombinations n xs
 
 
--- Ace can be low or high, so the successor of King is Ace
+isAcePresent :: [Card] -> Bool
+isAcePresent = any (\(Card _ rank) -> rank == Ace)
+
+
 cardRankSuccessor :: CardRank -> CardRank
 cardRankSuccessor rank
-    | rank == King = Ace
+    | rank == Ace = Two
     | otherwise = succ rank -- Rank is treated as an enum
 
 
@@ -134,17 +133,32 @@ getHighestCard :: [Card] -> Card
 getHighestCard = maximum
 
 
+compareAceLow :: CardRank -> CardRank -> Ordering
+compareAceLow a b
+  | a == Ace = LT      -- Ace is considered the lowest
+  | b == Ace = GT      -- Ace is considered the lowest
+  | otherwise = compare a b  -- Otherwise, use the default comparison
+
+compareAceHigh :: CardRank -> CardRank -> Ordering
+compareAceHigh = compare
+
+sortRanksAceLow :: [CardRank] -> [CardRank]
+sortRanksAceLow = sortBy compareAceLow
+
+sortRanksAceHigh :: [CardRank] -> [CardRank]
+sortRanksAceHigh = sort   -- default sort
+
+
 -- Returns a list of the ranks of cards
 -- Assumes Ace is LOW
 sortByCardRanksAceLow :: [Card] -> [Card]
-sortByCardRanksAceLow = sort
+sortByCardRanksAceLow = sortBy (\(Card _ rank1) (Card _ rank2) -> compareAceLow rank1 rank2)
+
 
 -- Returns a list of the ranks of cards
 -- Assumes Ace is HIGH
 sortByCardRanksAceHigh :: [Card] -> [Card]
-sortByCardRanksAceHigh cards = do
-    let (x:xs) = sort cards
-    xs ++ [x]
+sortByCardRanksAceHigh = sortBy (\(Card _ rank1) (Card _ rank2) -> compareAceHigh rank1 rank2)
 
 groupByCardRanksAceLow :: [Card] -> [[Card]]
 groupByCardRanksAceLow cards = group (sortByCardRanksAceLow cards)
