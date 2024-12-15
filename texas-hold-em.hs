@@ -2,6 +2,7 @@ import System.Random
 import Control.Monad.State
 import Data.List
 import Data.Maybe
+import Data.Ord
 
 
 data CardSuit = Clubs | Hearts | Spades | Diamonds deriving (Show, Eq)
@@ -21,6 +22,7 @@ instance Eq Card where
     (Card _ r1) /= (Card _ r2) = r1 /= r2
 
 instance Ord Card where
+    compare :: Card -> Card -> Ordering
     compare (Card _ cr1) (Card _ cr2) = compare cr1 cr2
 
 newtype Deck = Deck [Card] deriving Show
@@ -122,8 +124,8 @@ cardCombinations n (x:xs)
 
 
 -- Ace can be low or high, so the successor of King is Ace
-rankSuccessor :: CardRank -> CardRank
-rankSuccessor rank
+cardRankSuccessor :: CardRank -> CardRank
+cardRankSuccessor rank
     | rank == King = Ace
     | otherwise = succ rank -- Rank is treated as an enum
 
@@ -134,36 +136,40 @@ getHighestCard = maximum
 
 -- Returns a list of the ranks of cards
 -- Assumes Ace is LOW
-sortByRanksAceLow :: [Card] -> [Card]
-sortByRanksAceLow = sort
+sortByCardRanksAceLow :: [Card] -> [Card]
+sortByCardRanksAceLow = sort
 
 -- Returns a list of the ranks of cards
 -- Assumes Ace is HIGH
-sortByRanksAceHigh :: [Card] -> [Card]
-sortByRanksAceHigh cards = do
+sortByCardRanksAceHigh :: [Card] -> [Card]
+sortByCardRanksAceHigh cards = do
     let (x:xs) = sort cards
     xs ++ [x]
 
-groupByRanksAceLow :: [Card] -> [[Card]]
-groupByRanksAceLow cards = group (sortByRanksAceLow cards)
+groupByCardRanksAceLow :: [Card] -> [[Card]]
+groupByCardRanksAceLow cards = group (sortByCardRanksAceLow cards)
 
+
+-- Gets the third element from a tuple (similar to 'fst' and 'snd')
+third :: (a, b, c) -> c
+third (_, _, c) = c
 
 
 -- If there is one group with a length of 2 (2 of the cards have the same rank) then it is a Pair
 getOnePair :: [Card] -> Maybe [Card]
-getOnePair cards = case filter (\x -> length x == 2) (groupByRanksAceLow cards) of
+getOnePair cards = case filter (\x -> length x == 2) (groupByCardRanksAceLow cards) of
     [pair] -> Just pair    -- one pair
     _      -> Nothing
 
 -- If there are 2 groups with a length of 2 then there are 2 Pairs - a Two Pair
 getTwoPair :: [Card] -> Maybe [Card]
-getTwoPair cards = case filter (\x -> length x == 2) (groupByRanksAceLow cards) of
+getTwoPair cards = case filter (\x -> length x == 2) (groupByCardRanksAceLow cards) of
     [pair1, pair2] -> Just (pair1 ++ pair2)
     _              -> Nothing
 
 -- If there is a group of length 3 then it is a Three of a Kind
 getThreeOfAKind :: [Card] -> Maybe [Card]
-getThreeOfAKind cards = case filter (\x -> length x == 3) (groupByRanksAceLow cards) of
+getThreeOfAKind cards = case filter (\x -> length x == 3) (groupByCardRanksAceLow cards) of
     [threeOfAKind] -> Just threeOfAKind
     _        -> Nothing
 
@@ -176,9 +182,9 @@ getStraight cards =
         Nothing
 
     where
-        correctSuccessors = all (\(Card _ r1, Card _ r2) -> rankSuccessor r1 == r2)
-        sortedRanks = sortByRanksAceLow cards
-        sortedRanksAceHigh = sortByRanksAceHigh cards
+        correctSuccessors = all (\(Card _ r1, Card _ r2) -> cardRankSuccessor r1 == r2)
+        sortedRanks = sortByCardRanksAceLow cards
+        sortedRanksAceHigh = sortByCardRanksAceHigh cards
 
 -- If there is 1 group then all the cards have the same suit. This is a Flush
 getFlush :: [Card] -> Maybe [Card]
@@ -187,13 +193,13 @@ getFlush cards = if length (group (getCardSuits cards)) == 1 then Just cards els
 -- If there are 2 groups, one of length 2 and one of length 3, then there is a Pair and a Three of a Kind, known as a Full House
 getFullHouse :: [Card] -> Maybe [Card]
 getFullHouse cards =
-    case sort (map length (groupByRanksAceLow cards)) of
+    case sort (map length (groupByCardRanksAceLow cards)) of
         [2, 3] -> Just cards
         _      -> Nothing
 
 -- If there is a group of length 4 (4 of the same rank) then it is a Four of a Kind
 getFourOfAKind :: [Card] -> Maybe [Card]
-getFourOfAKind cards = case filter (\x -> length x == 4) (groupByRanksAceLow cards) of
+getFourOfAKind cards = case filter (\x -> length x == 4) (groupByCardRanksAceLow cards) of
     [fourOfAKind] -> Just fourOfAKind
     _             -> Nothing
 
@@ -204,7 +210,7 @@ getStraightFlush cards = if isJust (getStraight cards) && isJust (getFlush cards
 -- If a hand is a Flush and the ranks of the cards are Ten through Ace (high) then it's a Royal Flush
 getRoyalFlush :: [Card] -> Maybe [Card]
 getRoyalFlush cards =
-    if isJust (getFlush cards) && getCardRanks (sortByRanksAceHigh cards) == [Ten, Jack, Queen, King, Ace] then
+    if isJust (getFlush cards) && getCardRanks (sortByCardRanksAceHigh cards) == [Ten, Jack, Queen, King, Ace] then
         Just cards
     else
         Nothing
@@ -235,37 +241,98 @@ evaluateHandRanking cards =
                                     Nothing -> (cards, HighCard)
 
 
--- Given all combinations of cards, returns the list of cards with the highest hand rank
--- If multiple combinations have the same hand rank, the one with the higher ranked cards will win
-determineBestHand :: [([Card], HandRank)] -> ([Card], HandRank)
-determineBestHand [] = error "No hands to evaluate"
-determineBestHand (h:hx) = foldl compareHands h hx
-    where
-        compareHands (cards1, handRank1) (cards2, handRank2)
-            | handRank1 > handRank2                         = (cards1, handRank1)
-            | handRank1 < handRank2                         = (cards2, handRank2)
-            | getHighestCard cards1 > getHighestCard cards2 = (cards1, handRank1)
-            | getHighestCard cards1 < getHighestCard cards2 = (cards2, handRank2)
-            | otherwise                                     = (cards1, handRank2)
+-- Given a list of cards and their associated hand rank, returns a filtered list containing
+-- only the hands of the best rank in the list
+filterByBestPrimaryHandRanking :: [([Card], HandRank)] -> [([Card], HandRank)]
+filterByBestPrimaryHandRanking [] = error "No hands to evaluate"
+filterByBestPrimaryHandRanking hands = 
+    let sortedHandRankings = sortBy (flip (comparing snd)) hands
+        highestRank = snd (head hands)
+    in filter (\(_, rank) -> rank == highestRank) sortedHandRankings
+
+
+filterByPrimaryHandValues :: [([Card], HandRank)] -> [([Card], HandRank)]
+filterByPrimaryHandValues [] = error "No hands to evaluate"
+filterByPrimaryHandValues hands = 
+    let
+        comparePrimary :: ([Card], HandRank) -> ([Card], HandRank) -> Ordering
+        comparePrimary (primary1, rank1) (primary2, rank2) = 
+            case rank1 of
+                OnePair -> comparing getPairValue (primary1, rank1) (primary2, rank2)
+                _       -> EQ
+
+        rankToValue :: Card -> Int
+        rankToValue (Card _ rank) = fromEnum rank
+
+        -- Determine the highest primary hand
+        bestHand = maximumBy comparePrimary hands
+        bestPrimaryValue = fst bestHand
+
+        getPairValue :: ([Card], HandRank) -> Int
+        getPairValue (primary, _) = rankToValue (head primary) -- Pair value is the rank of the first card in the pair
+
+    in filter (\(primary, _) -> primary == bestPrimaryValue) hands     
 
 
 -- Adds the highest of the remaining cards to complete the 5-card hand 
-completeFiveCardHand :: [Card] -> [Card] -> [Card]
-completeFiveCardHand primaryHand allCards =
+completeFiveCardHand :: ([Card], HandRank) -> [Card] -> ([Card], [Card], HandRank)
+completeFiveCardHand (primaryHand, handRank) allCards =
     let remaining = filter (`notElem` primaryHand) allCards
-        sortedRemaining = reverse (sortByRanksAceHigh remaining)
-    in primaryHand ++ take (5 - length primaryHand) sortedRemaining
+        sortedRemaining =
+            if isAcePresent remaining
+            then reverse (sortByCardRanksAceHigh remaining)
+            else reverse (sortByCardRanksAceLow remaining)
+        kickers = take (5 - length primaryHand) sortedRemaining
+    in (primaryHand, kickers, handRank)
+
+
+-- Add kickers to each hand and return the updated hands.
+addKickers :: [Card] -> [([Card], HandRank)] -> [([Card], [Card], HandRank)]
+addKickers allCards = map (\hand -> completeFiveCardHand hand allCards)
+
+
+evaluateBestHand :: [Card] -> ([Card], [Card], HandRank)
+evaluateBestHand [] = error "No cards to evaluate"
+evaluateBestHand cards =
+    let
+        allCombinations = cardCombinations 5 cards
+
+        allRankedPrimaryHands = map evaluateHandRanking allCombinations
+        
+        allRankedPrimaryHandsUnique = map head (group (sortByHandRank allRankedPrimaryHands))
+
+        bestPrimaryHandsByRanking = filterByBestPrimaryHandRanking allRankedPrimaryHandsUnique
+        
+        [bestHand] = filterByPrimaryHandValues bestPrimaryHandsByRanking
+    
+        bestFiveCardHand = completeFiveCardHand bestHand cards
+
+
+        sortByHandRank :: [([Card], HandRank)] -> [([Card], HandRank)]
+        sortByHandRank hands = reverse (sortBy (comparing snd) hands)
+    
+    in bestFiveCardHand
 
 
 -- Returns the best possible hand formed from a list of cards. i.e. the hand formed using a players hole cards and the community cards
-evaluateHand :: [Card] -> ([Card], HandRank)
-evaluateHand [] = error "No cards to evaluate"
-evaluateHand cards =
-    let combinations = cardCombinations 5 cards
-        handRankings = map evaluateHandRanking combinations
-        bestPrimaryHand = determineBestHand handRankings
-        completeHand = completeFiveCardHand (fst bestPrimaryHand) cards
-    in (completeHand, snd bestPrimaryHand)
+evaluateHand :: Player -> State GameState ()
+evaluateHand player = do
+    gameState <- get
+
+    let comCards = case communityCards gameState of
+                  PreFlop -> []
+                  Flop cards -> cards
+                  Turn cards -> cards
+                  River cards -> cards
+
+    let allCards = comCards ++ holeCards player 
+
+    let (primaryHand, kickers, handrank) = evaluateBestHand allCards
+
+    let updatedPlayer = player {hand = Just (primaryHand, kickers, handrank)}
+    let updatedPlayers = map (\p -> if name p == name player then updatedPlayer else p) (activePlayers gameState)
+
+    updateActivePlayers updatedPlayers
 
 
 
