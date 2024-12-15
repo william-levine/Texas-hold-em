@@ -164,6 +164,10 @@ groupByCardRanksAceLow :: [Card] -> [[Card]]
 groupByCardRanksAceLow cards = group (sortByCardRanksAceLow cards)
 
 
+sortByHandRank :: [([Card], HandRank)] -> [([Card], HandRank)]
+sortByHandRank = sortBy (\(_, a) (_, b) -> compare b a)
+
+
 -- Gets the third element from a tuple (similar to 'fst' and 'snd')
 third :: (a, b, c) -> c
 third (_, _, c) = c
@@ -260,32 +264,70 @@ evaluateHandRanking cards =
 filterByBestPrimaryHandRanking :: [([Card], HandRank)] -> [([Card], HandRank)]
 filterByBestPrimaryHandRanking [] = error "No hands to evaluate"
 filterByBestPrimaryHandRanking hands = 
-    let sortedHandRankings = sortBy (flip (comparing snd)) hands
-        highestRank = snd (head hands)
-    in filter (\(_, rank) -> rank == highestRank) sortedHandRankings
+    let sortedHands = sortByHandRank hands
+        highestRank = snd (head sortedHands)
+    in filter (\(_, rank) -> rank == highestRank) sortedHands
 
 
 filterByPrimaryHandValues :: [([Card], HandRank)] -> [([Card], HandRank)]
 filterByPrimaryHandValues [] = error "No hands to evaluate"
 filterByPrimaryHandValues hands = 
     let
-        comparePrimary :: ([Card], HandRank) -> ([Card], HandRank) -> Ordering
-        comparePrimary (primary1, rank1) (primary2, rank2) = 
+        compareCards :: ([Card], HandRank) -> ([Card], HandRank) -> Ordering
+        compareCards (cards1, rank1) (cards2, rank2) = 
             case rank1 of
-                OnePair -> comparing getPairValue (primary1, rank1) (primary2, rank2)
-                _       -> EQ
+                OnePair       -> compare (getPairValue cards1) (getPairValue cards2)
+                TwoPair       -> compare (getTwoPairValue cards1) (getTwoPairValue cards2)
+                ThreeOfAKind  -> compare (getThreeOfAKindValue cards1) (getThreeOfAKindValue cards2)
+                FourOfAKind  -> compare (getFourOfAKindValue cards1) (getFourOfAKindValue cards2)
+                _             -> compare (getFiveCardHandValue cards1) (getFiveCardHandValue cards2)
 
-        rankToValue :: Card -> Int
-        rankToValue (Card _ rank) = fromEnum rank
+        getPairValue :: [Card] -> CardRank
+        getPairValue cards = getCardRank (head cards)
+
+        getTwoPairValue :: [Card] -> (CardRank, CardRank)
+        getTwoPairValue cards =
+            let ranks = map (\(Card suit rank) -> rank) cards
+                sortedRanks = sortRanksDescending ranks
+                groupedRanks = group sortedRanks
+                
+                highestPairRank = head (head groupedRanks)
+                lowestPairRank = head (last groupedRanks)
+            in (highestPairRank, lowestPairRank)
+
+        getThreeOfAKindValue :: [Card] -> CardRank
+        getThreeOfAKindValue cards = getCardRank (head cards)
+
+        getFourOfAKindValue :: [Card] -> CardRank
+        getFourOfAKindValue cards = getCardRank (head cards)
+
+        getFiveCardHandValue :: [Card] -> CardRank
+        getFiveCardHandValue cards = getCardRank (maximum cards)
+
+
+        sortRanksDescending :: [CardRank] -> [CardRank]
+        sortRanksDescending = sortBy (flip compare)
+
 
         -- Determine the highest primary hand
-        bestHand = maximumBy comparePrimary hands
-        bestPrimaryValue = fst bestHand
+        bestCards = maximumBy compareCards hands
+        bestCardValue = fst bestCards
 
-        getPairValue :: ([Card], HandRank) -> Int
-        getPairValue (primary, _) = rankToValue (head primary) -- Pair value is the rank of the first card in the pair
+    in filter (\(cards, _) -> cards == bestCardValue) hands 
 
-    in filter (\(primary, _) -> primary == bestPrimaryValue) hands     
+
+-- Function to sort the cards within each hand
+sortHandCardsByRank :: [([Card], HandRank)] -> [([Card], HandRank)]
+sortHandCardsByRank = 
+    let
+        -- Sort cards with Aces moved to the end
+        sortByCardRanks cards =
+            let aceHighOrder (Card _ rank1) (Card _ rank2)
+                    | rank1 == Ace && rank2 /= Ace = GT  -- Ace goes to the end
+                    | rank1 /= Ace && rank2 == Ace = LT  -- Ace goes to the end
+                    | otherwise = compare rank1 rank2   -- Otherwise, sort normally
+            in sortBy aceHighOrder cards
+    in map (\(cards, rank) -> (sortByCardRanks cards, rank))
 
 
 -- Adds the highest of the remaining cards to complete the 5-card hand 
@@ -302,7 +344,7 @@ completeFiveCardHand (primaryHand, handRank) allCards =
 
 -- Add kickers to each hand and return the updated hands.
 addKickers :: [Card] -> [([Card], HandRank)] -> [([Card], [Card], HandRank)]
-addKickers allCards = map (\hand -> completeFiveCardHand hand allCards)
+addKickers allCards = map (\hand -> completeFiveCardHand hand allCards) 
 
 
 evaluateBestHand :: [Card] -> ([Card], [Card], HandRank)
@@ -320,10 +362,6 @@ evaluateBestHand cards =
         [bestHand] = filterByPrimaryHandValues bestPrimaryHandsByRanking
     
         bestFiveCardHand = completeFiveCardHand bestHand cards
-
-
-        sortByHandRank :: [([Card], HandRank)] -> [([Card], HandRank)]
-        sortByHandRank hands = reverse (sortBy (comparing snd) hands)
     
     in bestFiveCardHand
 
@@ -347,8 +385,6 @@ evaluateHand player = do
     let updatedPlayers = map (\p -> if name p == name player then updatedPlayer else p) (activePlayers gameState)
 
     updateActivePlayers updatedPlayers
-
-
 
 
 -- Functions to update attributes of a game state
