@@ -55,7 +55,7 @@ data PlayerBehaviour = RandomPlayer | PassivePlayer | AggressivePlayer | SmartPl
 data Player = Player {
     name :: String,
     holeCards :: [Card],
-    hand :: Maybe ([Card], [Card], HandRank), -- (primary hand, kickers, hand rank)
+    hand :: ([Card], [Card], HandRank), -- (primary hand, kickers, hand rank)
     chips :: Chips,
     isDealer :: Bool,
     behaviour :: PlayerBehaviour
@@ -164,9 +164,15 @@ groupByCardRanksAceLow :: [Card] -> [[Card]]
 groupByCardRanksAceLow cards = group (sortByCardRanksAceLow cards)
 
 
-sortByHandRank :: [([Card], HandRank)] -> [([Card], HandRank)]
-sortByHandRank = sortBy (\(_, a) (_, b) -> compare b a)
+sortByHandRank :: [([Card], [Card], HandRank)] -> [([Card], [Card], HandRank)]
+sortByHandRank = sortBy (\(_, _, a) (_, _, b) -> compare b a)
 
+
+first :: (a, b, c) -> a
+first (a, _, _) = a
+
+second :: (a, b, c) -> b
+second (_, b, _) = b
 
 -- Gets the third element from a tuple (similar to 'fst' and 'snd')
 third :: (a, b, c) -> c
@@ -235,45 +241,45 @@ getRoyalFlush cards =
 
 
 -- Returns the best hand ranking from a given list of cards, along with the cards that form that hand
-evaluateHandRanking :: [Card] -> ([Card], HandRank)
+evaluateHandRanking :: [Card] -> ([Card], [Card], HandRank)
 evaluateHandRanking [] = error "No cards to evaluate"
 evaluateHandRanking cards =
     case getRoyalFlush cards of
-    Just hand -> (hand, RoyalFlush)
+    Just hand -> (hand, [], RoyalFlush)
     Nothing -> case getStraightFlush cards of
-        Just hand -> (hand, StraightFlush)
+        Just hand -> (hand, [], StraightFlush)
         Nothing -> case getFourOfAKind cards of
-            Just hand -> (hand, FourOfAKind)
+            Just hand -> (hand, [], FourOfAKind)
             Nothing -> case getFullHouse cards of
-                Just hand -> (hand, FullHouse)
+                Just hand -> (hand, [], FullHouse)
                 Nothing -> case getFlush cards of
-                    Just hand -> (hand, Flush)
+                    Just hand -> (hand, [], Flush)
                     Nothing -> case getStraight cards of
-                        Just hand -> (hand, Straight)
+                        Just hand -> (hand, [], Straight)
                         Nothing -> case getThreeOfAKind cards of
-                            Just hand -> (hand, ThreeOfAKind)
+                            Just hand -> (hand, [], ThreeOfAKind)
                             Nothing -> case getTwoPair cards of
-                                Just hand -> (hand, TwoPair)
+                                Just hand -> (hand, [], TwoPair)
                                 Nothing -> case getOnePair cards of
-                                    Just hand -> (hand, OnePair)
-                                    Nothing -> (cards, HighCard)
+                                    Just hand -> (hand, [], OnePair)
+                                    Nothing -> (cards, [], HighCard)
 
 
 -- Given a list of cards and their associated hand rank, returns a filtered list containing only the hands of the best rank in the list
-filterByPrimaryHandRanking :: [([Card], HandRank)] -> [([Card], HandRank)]
+filterByPrimaryHandRanking :: [([Card], [Card], HandRank)] -> [([Card], [Card], HandRank)]
 filterByPrimaryHandRanking [] = error "No hands to evaluate"
 filterByPrimaryHandRanking hands = 
     let sortedHands = sortByHandRank hands
-        highestRank = snd (head sortedHands)
-    in filter (\(_, rank) -> rank == highestRank) sortedHands
+        highestRank = third (head sortedHands)
+    in filter (\(_, _, rank) -> rank == highestRank) sortedHands
 
 
-filterByPrimaryHandValues :: [([Card], HandRank)] -> [([Card], HandRank)]
+filterByPrimaryHandValues :: [([Card], [Card], HandRank)] -> [([Card], [Card], HandRank)]
 filterByPrimaryHandValues [] = error "No hands to evaluate"
 filterByPrimaryHandValues hands = 
     let
-        compareCards :: ([Card], HandRank) -> ([Card], HandRank) -> Ordering
-        compareCards (cards1, rank1) (cards2, rank2) = 
+        compareCards :: ([Card], [Card], HandRank) -> ([Card], [Card], HandRank) -> Ordering
+        compareCards (cards1, _, rank1) (cards2, _, rank2) = 
             case rank1 of
                 OnePair       -> compare (getPairValue cards1) (getPairValue cards2)
                 TwoPair       -> compare (getTwoPairValue cards1) (getTwoPairValue cards2)
@@ -310,9 +316,9 @@ filterByPrimaryHandValues hands =
 
         -- Determine the highest primary hand
         bestCards = maximumBy compareCards hands
-        bestCardValue = fst bestCards
+        bestCardValue = first bestCards
 
-    in filter (\(cards, _) -> cards == bestCardValue) hands 
+    in filter (\(cards, _, _) -> cards == bestCardValue) hands 
 
 
 -- Function to sort the cards within each hand
@@ -330,8 +336,8 @@ sortHandCardsByRank =
 
 
 -- Adds the highest of the remaining cards to complete the 5-card hand 
-completeFiveCardHand :: ([Card], HandRank) -> [Card] -> ([Card], [Card], HandRank)
-completeFiveCardHand (primaryHand, handRank) allCards =
+completeFiveCardHand :: ([Card], [Card], HandRank) -> [Card] -> ([Card], [Card], HandRank)
+completeFiveCardHand (primaryHand, _, handRank) allCards =
     let remaining = filter (`notElem` primaryHand) allCards
         sortedRemaining =
             if isAcePresent remaining
@@ -342,7 +348,7 @@ completeFiveCardHand (primaryHand, handRank) allCards =
 
 
 -- Add kickers to each hand and return the updated hands.
-addKickers :: [Card] -> [([Card], HandRank)] -> [([Card], [Card], HandRank)]
+addKickers :: [Card] -> [([Card], [Card], HandRank)] -> [([Card], [Card], HandRank)]
 addKickers allCards = map (\hand -> completeFiveCardHand hand allCards) 
 
 
@@ -372,7 +378,7 @@ evaluateBestHand cards =
         bestFiveCardHand = completeFiveCardHand bestHand cards
 
 
-        removeDuplicates :: [([Card], HandRank)] -> [([Card], HandRank)]
+        removeDuplicates :: [([Card],[Card], HandRank)] -> [([Card], [Card], HandRank)]
         removeDuplicates cards = map head (group (sortByHandRank cards))
     
     in bestFiveCardHand
@@ -393,7 +399,7 @@ evaluateHand player = do
 
     let (primaryHand, kickers, handrank) = evaluateBestHand allCards
 
-    let updatedPlayer = player {hand = Just (primaryHand, kickers, handrank)}
+    let updatedPlayer = player {hand = (primaryHand, kickers, handrank)}
     let updatedPlayers = map (\p -> if name p == name player then updatedPlayer else p) (activePlayers gameState)
 
     updateActivePlayers updatedPlayers
@@ -436,11 +442,11 @@ initialiseGame = do
     let shuffledDeck = shuffleDeck 15 deck
 
     -- Generate 5 random players
-    let player1 = Player { name = "Player 1", holeCards = [], hand = Nothing, chips = 0, isDealer = True,  behaviour = RandomPlayer }
-    let player2 = Player { name = "Player 2", holeCards = [], hand = Nothing, chips = 0, isDealer = False, behaviour = RandomPlayer }
-    let player3 = Player { name = "Player 3", holeCards = [], hand = Nothing, chips = 0, isDealer = False, behaviour = RandomPlayer }
-    let player4 = Player { name = "Player 4", holeCards = [], hand = Nothing, chips = 0, isDealer = False, behaviour = RandomPlayer }
-    let player5 = Player { name = "Player 5", holeCards = [], hand = Nothing, chips = 0, isDealer = False, behaviour = RandomPlayer }
+    let player1 = Player { name = "Player 1", holeCards = [], hand = ([],[],HighCard), chips = 0, isDealer = True,  behaviour = RandomPlayer }
+    let player2 = Player { name = "Player 2", holeCards = [], hand = ([],[],HighCard), chips = 0, isDealer = False, behaviour = RandomPlayer }
+    let player3 = Player { name = "Player 3", holeCards = [], hand = ([],[],HighCard), chips = 0, isDealer = False, behaviour = RandomPlayer }
+    let player4 = Player { name = "Player 4", holeCards = [], hand = ([],[],HighCard), chips = 0, isDealer = False, behaviour = RandomPlayer }
+    let player5 = Player { name = "Player 5", holeCards = [], hand = ([],[],HighCard), chips = 0, isDealer = False, behaviour = RandomPlayer }
 
     -- Update the Game State
     put GameState {
