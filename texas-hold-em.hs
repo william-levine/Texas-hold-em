@@ -259,11 +259,10 @@ evaluateHandRanking cards =
                                     Nothing -> (cards, HighCard)
 
 
--- Given a list of cards and their associated hand rank, returns a filtered list containing
--- only the hands of the best rank in the list
-filterByBestPrimaryHandRanking :: [([Card], HandRank)] -> [([Card], HandRank)]
-filterByBestPrimaryHandRanking [] = error "No hands to evaluate"
-filterByBestPrimaryHandRanking hands = 
+-- Given a list of cards and their associated hand rank, returns a filtered list containing only the hands of the best rank in the list
+filterByPrimaryHandRanking :: [([Card], HandRank)] -> [([Card], HandRank)]
+filterByPrimaryHandRanking [] = error "No hands to evaluate"
+filterByPrimaryHandRanking hands = 
     let sortedHands = sortByHandRank hands
         highestRank = snd (head sortedHands)
     in filter (\(_, rank) -> rank == highestRank) sortedHands
@@ -351,17 +350,30 @@ evaluateBestHand :: [Card] -> ([Card], [Card], HandRank)
 evaluateBestHand [] = error "No cards to evaluate"
 evaluateBestHand cards =
     let
+        -- Every 5 card combination from the 7 total cards
         allCombinations = cardCombinations 5 cards
 
+        -- Each possible hand is extracted and ranked. Duplicates removed.
         allRankedPrimaryHands = map evaluateHandRanking allCombinations
-        
-        allRankedPrimaryHandsUnique = map head (group (sortByHandRank allRankedPrimaryHands))
+        allRankedPrimaryHandsUnique = removeDuplicates allRankedPrimaryHands
 
-        bestPrimaryHandsByRanking = filterByBestPrimaryHandRanking allRankedPrimaryHandsUnique
+        -- Hands are then filtered so that only hands of the best hand ranking remains
+        bestPrimaryHandsByRanking = filterByPrimaryHandRanking allRankedPrimaryHandsUnique
+
+        -- Hands are then further filtered by the values (e.g. pair of 7s beats pair of 4s)
+        bestPrimaryHandsByValues = filterByPrimaryHandValues bestPrimaryHandsByRanking
         
-        [bestHand] = filterByPrimaryHandValues bestPrimaryHandsByRanking
+        -- The best hand is selected as the first hand out of the remaining options
+        -- At this point they are all equivalent, so any can be chosen 
+        bestHand = head bestPrimaryHandsByValues
     
+        -- The kickers are then added to the hand
+        -- This is now the best 5 card hand that the player has
         bestFiveCardHand = completeFiveCardHand bestHand cards
+
+
+        removeDuplicates :: [([Card], HandRank)] -> [([Card], HandRank)]
+        removeDuplicates cards = map head (group (sortByHandRank cards))
     
     in bestFiveCardHand
 
