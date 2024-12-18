@@ -67,7 +67,7 @@ data GameState = GameState {
     deck :: Deck,
     communityCards :: CommunityCards,
     pot :: Chips,
-    bets :: [Int],
+    bets :: [(Player, Int)],
     dealerPosition :: Int,
     smallBlindPosition :: Int,
     bigBlindPosition :: Int
@@ -489,7 +489,7 @@ evaluateHand player = do
     let updatedPlayer = player {hand = (primaryHand, kickers, handrank)}
     let updatedPlayers = map (\p -> if name p == name player then updatedPlayer else p) (activePlayers gameState)
 
-    updateActivePlayers updatedPlayers
+    setActivePlayers updatedPlayers
 
 
 determineWinner :: State GameState [Player]
@@ -515,31 +515,106 @@ determineWinner = do
     return (map fst winners)
 
 
+playerCheck :: Player -> State GameState String
+playerCheck player = do
+    return (name player ++ " Checked")
+
+
+playerCall :: Player -> Int -> State GameState String
+playerCall player amount = do
+    gameState <- get
+
+    let
+        allPlayers = activePlayers gameState
+
+        -- Decrease the players chips
+        updatedPlayer = player { chips = chips player - amount }
+
+        -- Updated player list with updated player
+        updatedPlayers = map (\p -> if name p == name updatedPlayer then updatedPlayer else p) allPlayers
+
+    setActivePlayers updatedPlayers
+    addToPot amount                     -- increase the pot
+    addToBets (updatedPlayer, amount)   -- add a bet
+
+    return (name player  ++ " Called")
+
+
+playerRaise :: Player -> Int -> State GameState String
+playerRaise player amount = do
+    gameState <- get
+
+    let
+        allPlayers = activePlayers gameState
+
+        -- Decrease the players chips
+        updatedPlayer = player { chips = chips player - amount }
+
+        -- Updated player list with updated player
+        updatedPlayers = map (\p -> if name p == name updatedPlayer then updatedPlayer else p) allPlayers
+
+    setActivePlayers updatedPlayers
+    addToPot amount                    -- increase the pot
+    addToBets (updatedPlayer, amount)  -- add a bet
+
+    return (name player  ++ " Raised")
+        
+
+playerFold :: Player -> State GameState String
+playerFold player = do
+    gameState <- get
+
+    let
+        allPlayers = activePlayers gameState
+
+        -- Remove player form activePlayers
+        updatedPlayers = [p | p <- allPlayers, name p /= name player]
+
+    setActivePlayers updatedPlayers
+    removeFromBets player               -- delete all bets placed by the player
+
+    return (name player ++ " Folded")
+
+
 -- Functions to update attributes of a game state
 
-updateActivePlayers :: [Player] -> State GameState ()
-updateActivePlayers newActivePlayers = modify (\gs -> gs {activePlayers = newActivePlayers})
+setActivePlayers :: [Player] -> State GameState ()
+setActivePlayers newActivePlayers = modify (\gs -> gs {activePlayers = newActivePlayers})
 
-updateDeck :: Deck -> State GameState ()
-updateDeck newDeck = modify (\gs -> gs {deck = newDeck})
+setDeck :: Deck -> State GameState ()
+setDeck newDeck = modify (\gs -> gs {deck = newDeck})
 
-updateCommunityCards :: CommunityCards -> State GameState ()
-updateCommunityCards newCommunityCards = modify (\gs -> gs { communityCards = newCommunityCards })
+setCommunityCards :: CommunityCards -> State GameState ()
+setCommunityCards newCommunityCards = modify (\gs -> gs { communityCards = newCommunityCards })
 
-updatePot :: Int -> State GameState ()
-updatePot newPot = modify (\gs -> gs { pot = newPot })
+setPot :: Int -> State GameState ()
+setPot newPot = modify (\gs -> gs { pot = newPot })
 
-updateBets :: [Int] -> State GameState ()
-updateBets newBets = modify (\gs -> gs { bets = newBets })
+addToPot :: Int -> State GameState ()
+addToPot amount = modify (\gs -> gs { pot = pot gs + amount })
 
-updateDealerPosition :: Int -> State GameState ()
-updateDealerPosition newDealerPosition = modify (\gs -> gs { dealerPosition = newDealerPosition })
+setBets :: [(Player, Int)] -> State GameState ()
+setBets newBets = modify (\gs -> gs { bets = newBets })
 
-updateSmallBlindPosition :: Int -> State GameState ()
-updateSmallBlindPosition newSmallBlindPosition = modify (\gs -> gs { smallBlindPosition = newSmallBlindPosition })
+addToBets :: (Player, Int) -> State GameState ()
+addToBets newBet = modify (\gs -> gs {bets = bets gs ++ [newBet]})
 
-updateBigBlindPosition :: Int -> State GameState ()
-updateBigBlindPosition newBigBlindPosition = modify (\gs -> gs { bigBlindPosition = newBigBlindPosition })
+removeFromBets :: Player -> State GameState ()
+removeFromBets player = do
+    gameState <- get
+    let
+        newBets = [(p, a) | (p, a) <- bets gameState, name p /= name player]
+
+    put gameState { bets = newBets }
+
+setDealerPosition :: Int -> State GameState ()
+setDealerPosition newDealerPosition = modify (\gs -> gs { dealerPosition = newDealerPosition })
+
+setSmallBlindPosition :: Int -> State GameState ()
+setSmallBlindPosition newSmallBlindPosition = modify (\gs -> gs { smallBlindPosition = newSmallBlindPosition })
+
+setBigBlindPosition :: Int -> State GameState ()
+setBigBlindPosition newBigBlindPosition = modify (\gs -> gs { bigBlindPosition = newBigBlindPosition })
 
 
 runInitialisation :: GameState
