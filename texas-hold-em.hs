@@ -283,17 +283,20 @@ filterByPrimaryHandValues hands =
         compareCards :: ([Card], [Card], HandRank) -> ([Card], [Card], HandRank) -> Ordering
         compareCards (cards1, _, rank1) (cards2, _, rank2) = 
             case rank1 of
+                HighCard      -> compareCardLists (sortCardsAceHigh cards1) (sortCardsAceHigh cards2)
                 OnePair       -> compare (getPairValue cards1) (getPairValue cards2)
-                TwoPair       -> compare (getTwoPairValue cards1) (getTwoPairValue cards2)
+                TwoPair       -> compare (getTwoPairValues cards1) (getTwoPairValues cards2)
                 ThreeOfAKind  -> compare (getThreeOfAKindValue cards1) (getThreeOfAKindValue cards2)
-                FourOfAKind  -> compare (getFourOfAKindValue cards1) (getFourOfAKindValue cards2)
-                _             -> compare (getFiveCardHandValue cards1) (getFiveCardHandValue cards2)
+                Flush         -> compareCardLists (sortCardsAceHigh cards1) (sortCardsAceHigh cards2)
+                FullHouse     -> compare (getFullHouseValues cards1) (getFullHouseValues cards2)
+                FourOfAKind   -> compare (getFourOfAKindValue cards1) (getFourOfAKindValue cards2)
+                _             -> compare (getCardRank (maximum cards1)) (getCardRank (maximum cards2)) -- Straight, Straight Flush, Royal Flush
 
         getPairValue :: [Card] -> CardRank
         getPairValue cards = getCardRank (head cards)
 
-        getTwoPairValue :: [Card] -> (CardRank, CardRank)
-        getTwoPairValue cards =
+        getTwoPairValues :: [Card] -> (CardRank, CardRank)
+        getTwoPairValues cards =
             let ranks = map (\(Card suit rank) -> rank) cards
                 sortedRanks = sortRanksDescending ranks
                 groupedRanks = group sortedRanks
@@ -308,19 +311,38 @@ filterByPrimaryHandValues hands =
         getFourOfAKindValue :: [Card] -> CardRank
         getFourOfAKindValue cards = getCardRank (head cards)
 
-        getFiveCardHandValue :: [Card] -> CardRank
-        getFiveCardHandValue cards = getCardRank (maximum cards)
+        getFullHouseValues :: [Card] -> (CardRank, CardRank)
+        getFullHouseValues cards =
+            let ranks = map (\(Card suit rank) -> rank) cards
+                sortedRanks = sortRanksDescending ranks
+                groupedRanks = group sortedRanks
 
+                sortedGroupedRanks = sortBy (comparing length) groupedRanks
+
+                pairRank = head (head sortedGroupedRanks)
+                threeOfAKindRank = head (last sortedGroupedRanks)
+
+            in (threeOfAKindRank, pairRank)
 
         sortRanksDescending :: [CardRank] -> [CardRank]
         sortRanksDescending = sortBy (flip compare)
-
 
         -- Determine the highest primary hand
         bestCards = maximumBy compareCards hands
         bestCardValue = first bestCards
 
     in filter (\(cards, _, _) -> cards == bestCardValue) hands 
+
+
+-- EQ -> cards in each list have the same ranks
+-- GT -> cards in the first list have at least 1 card higher
+-- LT -> cards in the first list have at least 1 card lower 
+compareCardLists :: [Card] -> [Card] -> Ordering
+compareCardLists (x:xs) (y:ys) =
+    case compare (getCardRank x) (getCardRank y) of
+        EQ  -> compareCardLists xs ys
+        ord -> ord
+compareCardLists [] [] = EQ
 
 
 -- Useful for comparison of certain hands (Flush and Full House)
@@ -331,22 +353,12 @@ filterByHighestCards cardLists =
         -- Sort the inner lists of cards in reverse order (High -> Low)
         sortedCardLists = map (\cards -> reverse (sortCardsAceHigh cards)) cardLists
 
-        -- EQ -> cards in each list have the same ranks
-        -- GT -> cards in the first list have at least 1 card higher
-        -- LT -> cards in the first list have at least 1 card lower 
-        compareLists :: [Card] -> [Card] -> Ordering
-        compareLists (x:xs) (y:ys) =
-            case compare (getCardRank x) (getCardRank y) of
-                EQ  -> compareLists xs ys
-                ord -> ord
-        compareLists [] [] = EQ
-
         -- Extract the list of cards that contain the highest ranked cards
-        bestCards = maximumBy compareLists sortedCardLists
+        bestCards = maximumBy compareCardLists sortedCardLists
 
         -- Returns True/False depending on whether the input list of cards is equal to the best list of cards
         -- If equal, then the input list of cards is the best list (or one of the equally best lists)
-        isBest list = compareLists list bestCards == EQ
+        isBest list = compareCardLists list bestCards == EQ
     in
         -- Filters the sorted lists of cards such that only the best lists remain
         filter isBest sortedCardLists
@@ -501,6 +513,7 @@ determineWinner = do
             else filterPlayersByKickers winnersByCardValues
 
     return (map fst winners)
+
 
 -- Functions to update attributes of a game state
 
