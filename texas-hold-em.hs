@@ -50,7 +50,7 @@ data CommunityCards
 type Chips = Int
 
 
-data PlayerBehaviour = RandomPlayer | PassivePlayer | AggressivePlayer | SmartPlayer deriving (Show, Eq)
+data PlayerBehaviour = RandomPlayer | PassivePlayer | AggressivePlayer | SmartPlayer deriving (Show, Eq, Ord)
 
 data Player = Player {
     name :: String,
@@ -59,7 +59,7 @@ data Player = Player {
     chips :: Chips,
     isDealer :: Bool,
     behaviour :: PlayerBehaviour
-} deriving Show
+} deriving (Show, Eq, Ord)
 
 
 data GameState = GameState {
@@ -67,12 +67,13 @@ data GameState = GameState {
     deck :: Deck,
     communityCards :: CommunityCards,
     pot :: Chips,
-    bets :: [(Player, Int)],
+    bets :: [(Player, PlayerAction, Int)],
     dealerPosition :: Int,
     smallBlindPosition :: Int,
     bigBlindPosition :: Int
 } deriving Show
 
+data PlayerAction = Check | Bet | Call | Raise | ReRaise | Fold deriving (Show, Eq)
 
 
 createDeck :: Deck
@@ -270,7 +271,7 @@ evaluateHandRanking cards =
 -- Given a list of cards and their associated hand rank, returns a filtered list containing only the hands of the best rank in the list
 filterByPrimaryHandRanking :: [([Card], [Card], HandRank)] -> [([Card], [Card], HandRank)]
 filterByPrimaryHandRanking [] = error "No hands to evaluate"
-filterByPrimaryHandRanking hands = 
+filterByPrimaryHandRanking hands =
     let sortedHands = sortHandsByRank hands
         highestRank = third (head sortedHands)
     in filter (\(_, _, rank) -> rank == highestRank) sortedHands
@@ -278,10 +279,10 @@ filterByPrimaryHandRanking hands =
 
 filterByPrimaryHandValues :: [([Card], [Card], HandRank)] -> [([Card], [Card], HandRank)]
 filterByPrimaryHandValues [] = error "No hands to evaluate"
-filterByPrimaryHandValues hands = 
+filterByPrimaryHandValues hands =
     let
         compareCards :: ([Card], [Card], HandRank) -> ([Card], [Card], HandRank) -> Ordering
-        compareCards (cards1, _, rank1) (cards2, _, rank2) = 
+        compareCards (cards1, _, rank1) (cards2, _, rank2) =
             case rank1 of
                 HighCard      -> compareCardLists (sortCardsAceHigh cards1) (sortCardsAceHigh cards2)
                 OnePair       -> compare (getPairValue cards1) (getPairValue cards2)
@@ -300,7 +301,7 @@ filterByPrimaryHandValues hands =
             let ranks = map (\(Card suit rank) -> rank) cards
                 sortedRanks = sortRanksDescending ranks
                 groupedRanks = group sortedRanks
-                
+
                 highestPairRank = head (head groupedRanks)
                 lowestPairRank = head (last groupedRanks)
             in (highestPairRank, lowestPairRank)
@@ -331,7 +332,7 @@ filterByPrimaryHandValues hands =
         bestCards = maximumBy compareCards hands
         bestCardValue = first bestCards
 
-    in filter (\(cards, _, _) -> cards == bestCardValue) hands 
+    in filter (\(cards, _, _) -> cards == bestCardValue) hands
 
 
 -- EQ -> cards in each list have the same ranks
@@ -410,7 +411,7 @@ filterPlayersByKickers playerHands =
 
 -- Function to sort the cards within each hand
 sortHandCardsByRank :: [([Card], HandRank)] -> [([Card], HandRank)]
-sortHandCardsByRank = 
+sortHandCardsByRank =
     let
         -- Sort cards with Aces moved to the end
         sortByCardRanks cards =
@@ -436,7 +437,7 @@ completeFiveCardHand (primaryHand, _, handRank) allCards =
 
 -- Add kickers to each hand and return the updated hands.
 addKickers :: [Card] -> [([Card], [Card], HandRank)] -> [([Card], [Card], HandRank)]
-addKickers allCards = map (\hand -> completeFiveCardHand hand allCards) 
+addKickers allCards = map (\hand -> completeFiveCardHand hand allCards)
 
 
 evaluateBestHand :: [Card] -> ([Card], [Card], HandRank)
@@ -455,11 +456,11 @@ evaluateBestHand cards =
 
         -- Hands are then further filtered by the values (e.g. pair of 7s beats pair of 4s)
         bestPrimaryHandsByValues = filterByPrimaryHandValues bestPrimaryHandsByRanking
-        
+
         -- The best hand is selected as the first hand out of the remaining options
         -- At this point they are all equivalent, so any can be chosen 
         bestHand = head bestPrimaryHandsByValues
-    
+
         -- The kickers are then added to the hand
         -- This is now the best 5 card hand that the player has
         bestFiveCardHand = completeFiveCardHand bestHand cards
@@ -467,7 +468,7 @@ evaluateBestHand cards =
 
         removeDuplicates :: [([Card],[Card], HandRank)] -> [([Card], [Card], HandRank)]
         removeDuplicates hands = map head (group (sortHandsByRank hands))
-    
+
     in bestFiveCardHand
 
 
@@ -482,7 +483,7 @@ evaluateHand player = do
                   Turn cards -> cards
                   River cards -> cards
 
-    let allCards = comCards ++ holeCards player 
+    let allCards = comCards ++ holeCards player
 
     let (primaryHand, kickers, handrank) = evaluateBestHand allCards
 
@@ -495,24 +496,54 @@ evaluateHand player = do
 determineWinner :: State GameState [Player]
 determineWinner = do
     gameState <- get
-    
+
     let players = activePlayers gameState
         hands = map hand players
         playerHands = zip players hands
 
     let winnersByHandRanking = filterPlayersByPrimaryHandRanking playerHands
 
-    let winnersByCardValues = 
+    let winnersByCardValues =
             if length winnersByHandRanking == 1
             then winnersByHandRanking
             else filterPlayersByPrimaryHandValues winnersByHandRanking
 
-    let winners = 
-            if length winnersByCardValues == 1 
+    let winners =
+            if length winnersByCardValues == 1
             then winnersByCardValues
             else filterPlayersByKickers winnersByCardValues
 
     return (map fst winners)
+
+
+determineBettingOptions :: Player -> State GameState [PlayerAction]
+determineBettingOptions player = do
+    gameState <- get
+    let
+
+        -- Check
+        canCheck = null (bets gameState)
+
+        -- Bet (First person)
+        canBet = null (bets gameState) && chips player /= 0
+
+        -- Call
+        minBetCall = evalState (getMinimumRequiredBet player) gameState
+        canCall = chips player >= minBetCall
+
+        -- Raise
+        canRaise = chips player > minBetCall
+
+        -- Re-raise
+        -- canReRaise = 
+        prevRaise = evalState (getPreviousRaise player) gameState
+        canReRaise = (prevRaise /= 0) && (chips player >= (minBetCall + 2*prevRaise))
+
+        -- Fold
+        canFold = True
+
+    -- Construct the list of possible actions
+    return (concat [[Check | canCheck], [Bet | canBet], [Call | canCall], [Raise | canRaise], [ReRaise | canReRaise], [Fold | canFold]])
 
 
 playerCheck :: Player -> State GameState String
@@ -528,14 +559,15 @@ playerCall player amount = do
         allPlayers = activePlayers gameState
 
         -- Decrease the players chips
+        -- Ensure that 'player' here is the most recent version from 'activePlayers'
         updatedPlayer = player { chips = chips player - amount }
 
         -- Updated player list with updated player
         updatedPlayers = map (\p -> if name p == name updatedPlayer then updatedPlayer else p) allPlayers
 
     setActivePlayers updatedPlayers
-    addToPot amount                     -- increase the pot
-    addToBets (updatedPlayer, amount)   -- add a bet
+    addToPot amount                           -- increase the pot
+    addToBets (updatedPlayer, Call, amount)   -- add a bet
 
     return (name player  ++ " Called")
 
@@ -554,11 +586,11 @@ playerRaise player amount = do
         updatedPlayers = map (\p -> if name p == name updatedPlayer then updatedPlayer else p) allPlayers
 
     setActivePlayers updatedPlayers
-    addToPot amount                    -- increase the pot
-    addToBets (updatedPlayer, amount)  -- add a bet
+    addToPot amount                           -- increase the pot
+    addToBets (updatedPlayer, Raise, amount)  -- add a bet
 
     return (name player  ++ " Raised")
-        
+
 
 playerFold :: Player -> State GameState String
 playerFold player = do
@@ -591,21 +623,89 @@ setPot :: Int -> State GameState ()
 setPot newPot = modify (\gs -> gs { pot = newPot })
 
 addToPot :: Int -> State GameState ()
-addToPot amount = modify (\gs -> gs { pot = pot gs + amount })
+addToPot chips = modify (\gs -> gs { pot = pot gs + chips })
 
-setBets :: [(Player, Int)] -> State GameState ()
+setBets :: [(Player, PlayerAction, Int)] -> State GameState ()
 setBets newBets = modify (\gs -> gs { bets = newBets })
 
-addToBets :: (Player, Int) -> State GameState ()
+addToBets :: (Player, PlayerAction, Int) -> State GameState ()
 addToBets newBet = modify (\gs -> gs {bets = bets gs ++ [newBet]})
 
 removeFromBets :: Player -> State GameState ()
 removeFromBets player = do
     gameState <- get
     let
-        newBets = [(p, a) | (p, a) <- bets gameState, name p /= name player]
+        newBets = [(p, a, c) | (p, a, c) <- bets gameState, name p /= name player]
 
     put gameState { bets = newBets }
+
+
+getMinimumRequiredBet :: Player -> State GameState Int
+getMinimumRequiredBet player = do
+    gameState <- get
+
+    let
+        maxBet = evalState getBiggestAccumulativeBet gameState
+        playersBet = evalState (getPlayersAccumulativeBet player) gameState
+
+    return (maxBet - playersBet)
+
+getPlayersAccumulativeBet :: Player -> State GameState Int
+getPlayersAccumulativeBet player = do
+    gameState <- get
+
+    let
+        allBets = bets gameState
+
+        sortedBets = sortOn first allBets
+
+        groupedBets = groupBy (\(p1, _, _) (p2, _, _) -> name p1 == name p2) sortedBets
+
+        summedBets = [(player, action, sum (map third playerBets)) |
+            playerBets <- groupedBets,
+            let player = first (head playerBets),
+            let action = second (head playerBets)]
+
+        playersBets = [chips | (p, action, chips) <- summedBets, name p == name player]
+
+        playersBet = if null playersBets then 0 else head playersBets
+
+    return playersBet
+
+
+getBiggestAccumulativeBet :: State GameState Int
+getBiggestAccumulativeBet = do
+    gameState <- get
+
+    let
+        allBets = bets gameState
+
+        sortedBets = sortOn first allBets
+        groupedBets = groupBy (\(p1, _, _) (p2, _, _) -> name p1 == name p2) sortedBets
+        summedBets = [(player, action, sum (map third playerBets)) |
+            playerBets <- groupedBets,
+            let player = first (head playerBets),
+            let action = second (head playerBets)]
+
+        sortedSummedBets = sortOn third summedBets
+        highestBet = third (last sortedSummedBets)
+
+    return highestBet
+
+
+getPreviousRaise :: Player -> State GameState Int
+getPreviousRaise player = do
+    gameState <- get
+
+    let
+        allBets = bets gameState
+
+        raises = filter (\(_, action, _) -> action == Raise) allBets
+
+        raiseAmount = if null raises || name (first (last raises)) == name player then 0 else third (last raises)
+
+    return raiseAmount
+
 
 setDealerPosition :: Int -> State GameState ()
 setDealerPosition newDealerPosition = modify (\gs -> gs { dealerPosition = newDealerPosition })
@@ -627,11 +727,11 @@ initialiseGame = do
     let shuffledDeck = shuffleDeck 15 deck
 
     -- Generate 5 random players
-    let player1 = Player { name = "Player 1", holeCards = [], hand = ([],[],HighCard), chips = 0, isDealer = True,  behaviour = RandomPlayer }
-    let player2 = Player { name = "Player 2", holeCards = [], hand = ([],[],HighCard), chips = 0, isDealer = False, behaviour = RandomPlayer }
-    let player3 = Player { name = "Player 3", holeCards = [], hand = ([],[],HighCard), chips = 0, isDealer = False, behaviour = RandomPlayer }
-    let player4 = Player { name = "Player 4", holeCards = [], hand = ([],[],HighCard), chips = 0, isDealer = False, behaviour = RandomPlayer }
-    let player5 = Player { name = "Player 5", holeCards = [], hand = ([],[],HighCard), chips = 0, isDealer = False, behaviour = RandomPlayer }
+    let player1 = Player { name = "Player 1", holeCards = [], hand = ([],[],HighCard), chips = 500, isDealer = True,  behaviour = RandomPlayer }
+    let player2 = Player { name = "Player 2", holeCards = [], hand = ([],[],HighCard), chips = 500, isDealer = False, behaviour = RandomPlayer }
+    let player3 = Player { name = "Player 3", holeCards = [], hand = ([],[],HighCard), chips = 500, isDealer = False, behaviour = RandomPlayer }
+    let player4 = Player { name = "Player 4", holeCards = [], hand = ([],[],HighCard), chips = 500, isDealer = False, behaviour = RandomPlayer }
+    let player5 = Player { name = "Player 5", holeCards = [], hand = ([],[],HighCard), chips = 500, isDealer = False, behaviour = RandomPlayer }
 
     -- Update the Game State
     put GameState {
